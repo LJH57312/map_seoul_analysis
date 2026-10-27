@@ -79,7 +79,8 @@
       <div class="hint" id="timeHint"></div></div>
     <div class="grp"><label for="clusterFilter" id="filterLabel">군집 필터</label>
       <select id="clusterFilter" onchange="redraw()"></select></div>
-    <div class="grp"><label for="regionSelect">지역 찾기</label>
+    <div class="grp"><label for="regionSelect" id="regionLabel">지역 찾기</label>
+      <select id="guSelect" onchange="onGu()" style="margin-bottom:6px"><option value="">자치구 선택</option></select>
       <select id="regionSelect" onchange="goRegion()"><option value="">지역을 선택하세요</option></select>
       <label class="chk"><input type="checkbox" id="onlySel" onchange="redraw()" disabled><span id="onlyLabel">선택한 동만 보기</span></label></div>
     <div class="grp"><label for="opacity">투명도 (<span id="opv">55</span>%)</label>
@@ -125,11 +126,11 @@ const BASES = {'일반 지도 - 역·동 이름 (OpenStreetMap)': osm, '일반 �
 const VKEY = "";
 if (VKEY) BASES['브이월드 일반지도'] = L.tileLayer('https://api.vworld.kr/req/wmts/1.0.0/' + VKEY + '/Base/{z}/{y}/{x}.png',
   {maxZoom: 19, attribution: '&copy; VWorld'});
-const first = VKEY ? BASES['브이월드 일반지도'] : osm;
-first.addTo(map);
+const baseFirst = VKEY ? BASES['브이월드 일반지도'] : osm;
+baseFirst.addTo(map);
 L.control.layers(BASES, null, {position: 'topright', collapsed: true}).addTo(map);
 let tileErr = 0;                               // 첫 배경지도가 계속 실패하면(예: 주소 차단) 다음 지도로 자동 전환
-first.on('tileerror', () => { if (++tileErr === 8 && map.hasLayer(first)) { map.removeLayer(first); (first === osm ? esriSt : osm).addTo(map); } });
+baseFirst.on('tileerror', () => { if (++tileErr === 8 && map.hasLayer(baseFirst)) { map.removeLayer(baseFirst); (baseFirst === osm ? esriSt : osm).addTo(map); } });
 let seoulBounds = null;
 function fitSeoul() {                          // 서울 전체가 화면에 들어오도록 (지도 크기가 바뀐 뒤에도 호출)
   map.invalidateSize();
@@ -206,11 +207,12 @@ function popup(f) {
     `<div class="pop-hint">양수(빨강): 머무는 사람이 등록인구보다 많음 / 음수(파랑): 적음</div>`;
 }
 function selKey() { return document.getElementById('regionSelect').value; }
-function onlySel() { return document.getElementById('onlySel').checked && !!selKey(); }
+function selGu() { return unit === 'dong' ? document.getElementById('guSelect').value : ''; }
+function onlySel() { return document.getElementById('onlySel').checked && (!!selKey() || !!selGu()); }
 function keyOf(f) { return (f.properties[P.gu] || '') + '|' + f.properties[P.name]; }
 function visible(f) {
   const flt = document.getElementById('clusterFilter').value, k = selKey();
-  if (onlySel()) return keyOf(f) === k;                       // '선택한 동만 보기': 나머지는 지도에서 사라진다
+  if (onlySel()) return k ? keyOf(f) === k : f.properties[P.gu] === selGu();   // '선택한 동만 보기': 나머지는 지도에서 사라진다(동 미선택이면 선택한 구의 동들만)
   return flt === 'all' || String(cl(f)) === flt || (k !== '' && keyOf(f) === k);
 }
 function focusOn(l, at) {
@@ -273,20 +275,46 @@ function setUnit(u) {
   fillRegions(); setModel(model);
   fitSeoul();
 }
+function syncOnly() {
+  const cb = document.getElementById('onlySel'), on = !!(selKey() || selGu());
+  cb.disabled = !on; if (!on) cb.checked = false;
+}
+function fitFeatures(pred) {
+  if (!layer) return null; let b = null;
+  layer.eachLayer(l => { if (pred(l.feature)) { b = b ? b.extend(l.getBounds()) : L.latLngBounds(l.getBounds().getSouthWest(), l.getBounds().getNorthEast()); } });
+  return b;
+}
+function onGu() {                                   // 자치구를 고르면 그 구의 동 목록으로 바꾸고 구 전체로 이동
+  const g = selGu();
+  fillDongs(g);
+  document.getElementById('regionSelect').value = '';
+  syncOnly(); redraw();
+  if (g) { const b = fitFeatures(f => f.properties[P.gu] === g); if (b) map.fitBounds(b, {padding: [10, 10], maxZoom: 15}); }
+  else fitSeoul();
+}
 function goRegion() {
-  const v = selKey(), cb = document.getElementById('onlySel');
-  cb.disabled = !v; if (!v) cb.checked = false;
-  redraw();
+  const v = selKey();
+  syncOnly(); redraw();
   if (!v || !layer) return;
   layer.eachLayer(l => { if (keyOf(l.feature) === v) { map.fitBounds(l.getBounds(), {maxZoom: 15}); l.openPopup(l.getBounds().getCenter()); } });
 }
-function fillRegions() {
-  const regs = DATA().features.map(f => [f.properties[P.gu] + '|' + f.properties[P.name], ((f.properties[P.gu] || '') + ' ' + f.properties[P.name]).trim()])
-    .sort((a, b) => a[1].localeCompare(b[1], 'ko'));
-  document.getElementById('onlySel').checked = false; document.getElementById('onlySel').disabled = true;
-  document.getElementById('onlyLabel').innerText = '선택한 ' + unitName() + '만 보기';
-  document.getElementById('regionSelect').innerHTML = '<option value="">지역을 선택하세요</option>' +
+function fillDongs(g) {
+  const regs = DATA().features.filter(f => !g || f.properties[P.gu] === g)
+    .map(f => [keyOf(f), f.properties[P.name]]).sort((a, b) => a[1].localeCompare(b[1], 'ko'));
+  document.getElementById('regionSelect').innerHTML = '<option value="">' + (g ? g + '의 행정동 선택 (' + regs.length + '개)' : '행정동 선택 (전체)') + '</option>' +
     regs.map(r => `<option value="${r[0]}">${r[1]}</option>`).join('');
+}
+function fillRegions() {
+  const gs = [...new Set(DATA().features.map(f => f.properties[P.gu]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const gsel = document.getElementById('guSelect');
+  gsel.style.display = unit === 'dong' ? '' : 'none';
+  gsel.innerHTML = '<option value="">자치구 선택 (전체)</option>' + gs.map(g => `<option value="${g}">${g}</option>`).join('');
+  document.getElementById('onlySel').checked = false; document.getElementById('onlySel').disabled = true;
+  document.getElementById('onlyLabel').innerText = unit === 'dong' ? '선택한 구·동만 보기' : '선택한 구만 보기';
+  document.getElementById('regionLabel').innerText = unit === 'dong' ? '지역 찾기 (자치구 → 행정동)' : '지역 찾기 (자치구)';
+  if (unit === 'dong') fillDongs('');
+  else document.getElementById('regionSelect').innerHTML = '<option value="">자치구 선택</option>' +
+    DATA().features.map(f => [keyOf(f), f.properties[P.name]]).sort((a, b) => a[1].localeCompare(b[1], 'ko')).map(r => `<option value="${r[0]}">${r[1]}</option>`).join('');
 }
 (function init() {
   if (!ALL.gu) document.getElementById('btn-gu').style.display = 'none';
