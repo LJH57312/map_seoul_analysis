@@ -94,10 +94,11 @@
       <b>핫스팟이란</b> 한 동만의 값이 아니라 <u>이웃한 동들과 함께</u> 괴리가 유난히 큰(작은) 곳입니다(Getis-Ord Gi*, 신뢰도 90·95·99%).
       동 426개를 한꺼번에 검정하므로 신뢰도 90%는 우연히 나온 경우가 섞일 수 있어 95% 이상을 중심으로 보세요.<br>
       <b>사용법</b> 지도에서 동(구)을 누르면 확대되고, 이미 확대된 상태에서는 그 지역으로 이동합니다. 경계 바로 옆(약 40px 이내)을 눌러도 가장 가까운 지역으로 이동합니다.
-      지도가 글자를 가리면 투명도를 낮추세요. 오른쪽 위 버튼에서 배경지도를 바꿀 수 있습니다.
+      누른 지역의 자치구·행정동은 '지역 찾기' 칸에 자동으로 표시됩니다.
+      지도가 글자를 가리면 투명도를 낮추세요.
     </details>
     <div class="note"><b>출처</b> 서울 열린데이터광장 서울 생활인구(내국인), 행정안전부 주민등록 인구통계, 통계청 SGIS 행정구역 경계(2024.6 기준).
-      배경지도: © OpenStreetMap contributors / Esri(오른쪽 위 버튼으로 전환).</div>
+      배경지도: © OpenStreetMap contributors.</div>
     </div>
   </div>
 </div>
@@ -118,19 +119,15 @@ let model = "k4", mode = "day", layer = null;
 const map = L.map('map', {zoomSnap: 0.25, zoomDelta: 0.5}).setView([37.5665, 126.9780], 11);
 const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
   {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'});
-const esriSt = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-  {maxZoom: 19, maxNativeZoom: 18, attribution: 'Tiles &copy; Esri'});
-const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-  {maxZoom: 18, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'});
-const BASES = {'일반 지도 - 역·동 이름 (OpenStreetMap)': osm, '일반 지도 (Esri 거리)': esriSt, '밝은 회색 지도 (Esri)': esri};
+const BASES = {'일반 지도 (OpenStreetMap)': osm};
 const VKEY = "";
 if (VKEY) BASES['브이월드 일반지도'] = L.tileLayer('https://api.vworld.kr/req/wmts/1.0.0/' + VKEY + '/Base/{z}/{y}/{x}.png',
   {maxZoom: 19, attribution: '&copy; VWorld'});
 const baseFirst = VKEY ? BASES['브이월드 일반지도'] : osm;
 baseFirst.addTo(map);
-L.control.layers(BASES, null, {position: 'topright', collapsed: true}).addTo(map);
-let tileErr = 0;                               // 첫 배경지도가 계속 실패하면(예: 주소 차단) 다음 지도로 자동 전환
-baseFirst.on('tileerror', () => { if (++tileErr === 8 && map.hasLayer(baseFirst)) { map.removeLayer(baseFirst); (baseFirst === osm ? esriSt : osm).addTo(map); } });
+if (Object.keys(BASES).length > 1) L.control.layers(BASES, null, {position: 'topright', collapsed: true}).addTo(map);   // 배경지도가 하나뿐이면 전환 버튼 없음
+let tileErr = 0;                               // 브이월드가 계속 실패하면 OpenStreetMap으로 자동 전환
+if (baseFirst !== osm) baseFirst.on('tileerror', () => { if (++tileErr === 8 && map.hasLayer(baseFirst)) { map.removeLayer(baseFirst); osm.addTo(map); } });
 let seoulBounds = null;
 function fitSeoul() {                          // 서울 전체가 화면에 들어오도록 (지도 크기가 바뀐 뒤에도 호출)
   map.invalidateSize();
@@ -230,7 +227,7 @@ function redraw() {
       return {fillColor: color(cl(f)), color: on ? '#111' : '#444', weight: on ? 3 : 1, fillOpacity: op, opacity: 0.9}; },
     onEachFeature: (f, l) => {
       l.bindPopup(popup(f), {autoPan: false, maxWidth: Math.max(200, Math.min(300, window.innerWidth - 70))}); l.bindTooltip(f.properties[P.name]);
-      l.on('click', e => { lastPoly = Date.now(); if (e.originalEvent) L.DomEvent.stopPropagation(e); focusOn(l, e.latlng); });
+      l.on('click', e => { lastPoly = Date.now(); if (e.originalEvent) L.DomEvent.stopPropagation(e); selectFromMap(f, e.latlng); });
     }
   }).addTo(map);
 }
@@ -244,8 +241,20 @@ map.on('click', e => {                                   // 지역 사이 빈틈
     const c = map.latLngToContainerPoint(b.getCenter()), d = Math.hypot(dx, dy), cd = Math.hypot(c.x - e.containerPoint.x, c.y - e.containerPoint.y);
     if (d < bd || (d === bd && cd < bc)) { bd = d; bc = cd; best = l; }
   });
-  if (best && bd <= 40) focusOn(best);
+  if (best && bd <= 40) selectFromMap(best.feature);
 });
+function selectFromMap(f, at) {                          // 지도에서 누른 지역을 '지역 찾기' 칸에 표시 (마우스·터치 공통)
+  const k = keyOf(f);
+  if (unit === 'dong') {
+    const gs = document.getElementById('guSelect'), g = f.properties[P.gu] || '';
+    if (gs.value !== g) { gs.value = g; fillDongs(gs.value); }
+  }
+  document.getElementById('regionSelect').value = k;
+  syncOnly(); redraw();                                  // 선택한 지역 테두리 강조
+  let hit = null;
+  layer.eachLayer(l => { if (keyOf(l.feature) === k) hit = l; });
+  if (hit) focusOn(hit, at);
+}
 function setModel(m) {
   if (unit === 'gu' && m !== 'k4') m = 'k4';        // 자치구는 K=4 군집만 제공
   model = m;
