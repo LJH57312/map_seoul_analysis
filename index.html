@@ -44,8 +44,10 @@
   .chk input { width: 18px; height: 18px; }
   @media (max-width: 768px) {
     body { flex-direction: column; }
-    #sidebar { width: 100%; flex: 0 0 42vh; border-right: 0; border-bottom: 1px solid #ddd; }
-    #map { height: 58vh; flex: 1; }
+    #sidebar { width: 100%; flex: 0 0 auto; height: 44vh; height: 44dvh; min-height: 0; max-height: 44dvh; overflow: hidden; border-right: 0; border-bottom: 1px solid #ddd; }
+    .content { min-height: 0; -webkit-overflow-scrolling: touch; }
+    #map { flex: 1 1 0; min-height: 0; height: auto; }
+    body { height: 100vh; height: 100dvh; }
   }
 </style>
 </head>
