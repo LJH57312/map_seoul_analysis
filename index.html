@@ -42,12 +42,20 @@
   .pos { color: #b42318; } .neg { color: #175cd3; }
   .chk { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; min-height: 32px; }
   .chk input { width: 18px; height: 18px; }
+  details.note summary { cursor: pointer; font-weight: 700; color: #1a5fb4; padding: 4px 0; }
   @media (max-width: 768px) {
-    body { flex-direction: column; }
-    #sidebar { width: 100%; flex: 0 0 auto; height: 44vh; height: 44dvh; min-height: 0; max-height: 44dvh; overflow: hidden; border-right: 0; border-bottom: 1px solid #ddd; }
-    .content { min-height: 0; -webkit-overflow-scrolling: touch; }
+    body { flex-direction: column; height: 100vh; height: 100dvh; }
+    #sidebar { width: 100%; flex: 0 0 auto; height: 34vh; height: 34dvh; min-height: 0; overflow: hidden; border-right: 0; border-bottom: 1px solid #ddd; }
+    .head { padding: 6px 12px; } .head h2 { font-size: 14px; margin: 0; } .head p { display: none; }
+    .content { min-height: 0; padding: 8px 12px; -webkit-overflow-scrolling: touch; }
+    .grp { margin-bottom: 8px; } .grp > label { font-size: 11.5px; margin-bottom: 3px; }
+    .seg button { font-size: 11.5px; min-height: 32px; padding: 5px 2px; }
+    .seg button small { font-size: 9.5px; }
+    select, input[type=range] { min-height: 32px; font-size: 13px; }
+    .hint { font-size: 10px; padding: 4px 6px; margin-top: 4px; }
+    .legend-item { font-size: 11px; margin: 4px 0; } .lg-sub { font-size: 10px; }
+    .note { font-size: 10px; } .chk { font-size: 12px; min-height: 26px; margin-top: 4px; }
     #map { flex: 1 1 0; min-height: 0; height: auto; }
-    body { height: 100vh; height: 100dvh; }
   }
 </style>
 </head>
@@ -74,19 +82,21 @@
     <div class="grp"><label for="regionSelect">지역 찾기</label>
       <select id="regionSelect" onchange="goRegion()"><option value="">지역을 선택하세요</option></select>
       <label class="chk"><input type="checkbox" id="onlySel" onchange="redraw()" disabled><span id="onlyLabel">선택한 동만 보기</span></label></div>
-    <div class="grp"><label for="opacity">투명도 (<span id="opv">70</span>%)</label>
-      <input type="range" id="opacity" min="10" max="100" value="70" oninput="document.getElementById('opv').innerText=this.value; redraw()"></div>
+    <div class="grp"><label for="opacity">투명도 (<span id="opv">55</span>%)</label>
+      <input type="range" id="opacity" min="10" max="100" value="55" oninput="document.getElementById('opv').innerText=this.value; redraw()"></div>
     <div class="grp"><label id="legendLabel">범례</label><div id="legend"></div></div>
     <div class="note" id="viewNote"></div>
-    <div class="note">
+    <details class="note"><summary>읽는 법 · 핫스팟 · 사용법 (눌러서 펼치기)</summary>
       <b>읽는 법</b> 괴리지수 G = (생활인구 − 주민등록인구) / 주민등록인구. G=1이면 체류인구가 등록인구의 2배입니다.
       군집 번호는 평일 주간 수준이 낮은 순서이며, 이름은 군집 중심의 패턴을 규칙으로 서술한 것입니다(소득·용도 등으로 검증한 분류가 아님).
       등록인구가 적은 도심 동은 비율이 매우 크게 나옵니다.<br>
       <b>핫스팟이란</b> 한 동만의 값이 아니라 <u>이웃한 동들과 함께</u> 괴리가 유난히 큰(작은) 곳입니다(Getis-Ord Gi*, 신뢰도 90·95·99%).
       동 426개를 한꺼번에 검정하므로 신뢰도 90%는 우연히 나온 경우가 섞일 수 있어 95% 이상을 중심으로 보세요.<br>
-      <b>출처</b> 서울 열린데이터광장 서울 생활인구(내국인), 행정안전부 주민등록 인구통계, 통계청 SGIS 행정구역 경계(2024.6 기준).
-      배경지도: Esri World Light Gray Base(기본) / © OpenStreetMap contributors(오른쪽 위 버튼으로 전환).<br>
       <b>사용법</b> 지도에서 동(구)을 누르면 확대되고, 이미 확대된 상태에서는 그 지역으로 이동합니다. 경계 바로 옆(약 40px 이내)을 눌러도 가장 가까운 지역으로 이동합니다.
+      지도가 글자를 가리면 투명도를 낮추세요. 오른쪽 위 버튼에서 배경지도를 바꿀 수 있습니다.
+    </details>
+    <div class="note"><b>출처</b> 서울 열린데이터광장 서울 생활인구(내국인), 행정안전부 주민등록 인구통계, 통계청 SGIS 행정구역 경계(2024.6 기준).
+      배경지도: © OpenStreetMap contributors / Esri(오른쪽 위 버튼으로 전환).</div>
     </div>
   </div>
 </div>
@@ -104,15 +114,32 @@ function DATA() { return ALL[unit]; }
 function unitName() { return unit === "dong" ? "동" : "구"; }
 let model = "k4", mode = "day", layer = null;
 
-const map = L.map('map').setView([37.5665, 126.9780], 11);
-const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-  {maxZoom: 18, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'});
+const map = L.map('map', {zoomSnap: 0.25, zoomDelta: 0.5}).setView([37.5665, 126.9780], 11);
 const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
   {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'});
-esri.addTo(map);
-L.control.layers({'밝은 회색 지도 (Esri)': esri, '일반 지도 (OpenStreetMap)': osm}, null, {position: 'topright'}).addTo(map);
-let tileErr = 0;                               // Esri 타일이 계속 실패하면 OpenStreetMap으로 자동 전환
-esri.on('tileerror', () => { if (++tileErr === 8 && map.hasLayer(esri)) { map.removeLayer(esri); osm.addTo(map); } });
+const esriSt = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+  {maxZoom: 19, maxNativeZoom: 18, attribution: 'Tiles &copy; Esri'});
+const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+  {maxZoom: 18, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'});
+const BASES = {'일반 지도 - 역·동 이름 (OpenStreetMap)': osm, '일반 지도 (Esri 거리)': esriSt, '밝은 회색 지도 (Esri)': esri};
+const VKEY = "";
+if (VKEY) BASES['브이월드 일반지도'] = L.tileLayer('https://api.vworld.kr/req/wmts/1.0.0/' + VKEY + '/Base/{z}/{y}/{x}.png',
+  {maxZoom: 19, attribution: '&copy; VWorld'});
+const first = VKEY ? BASES['브이월드 일반지도'] : osm;
+first.addTo(map);
+L.control.layers(BASES, null, {position: 'topright', collapsed: true}).addTo(map);
+let tileErr = 0;                               // 첫 배경지도가 계속 실패하면(예: 주소 차단) 다음 지도로 자동 전환
+first.on('tileerror', () => { if (++tileErr === 8 && map.hasLayer(first)) { map.removeLayer(first); (first === osm ? esriSt : osm).addTo(map); } });
+let seoulBounds = null;
+function fitSeoul() {                          // 서울 전체가 화면에 들어오도록 (지도 크기가 바뀐 뒤에도 호출)
+  map.invalidateSize();
+  if (!seoulBounds) seoulBounds = L.geoJSON(ALL.dong).getBounds();
+  map.fitBounds(seoulBounds, {padding: [6, 6], animate: false});
+}
+let rzT = null;
+function onResize() { clearTimeout(rzT); rzT = setTimeout(() => map.invalidateSize(), 150); }
+window.addEventListener('resize', onResize); window.addEventListener('orientationchange', () => setTimeout(fitSeoul, 300));
+if (window.ResizeObserver) new ResizeObserver(onResize).observe(document.getElementById('map'));
 let lastPoly = 0;
 
 function cl(f) {
@@ -244,7 +271,7 @@ function setUnit(u) {
   document.getElementById('btn-dong').classList.toggle('on', u === 'dong');
   document.getElementById('btn-gu').classList.toggle('on', u === 'gu');
   fillRegions(); setModel(model);
-  map.setView([37.5665, 126.9780], 11);
+  fitSeoul();
 }
 function goRegion() {
   const v = selKey(), cb = document.getElementById('onlySel');
@@ -265,6 +292,8 @@ function fillRegions() {
   if (!ALL.gu) document.getElementById('btn-gu').style.display = 'none';
   fillRegions();
   setModel(model);
+  fitSeoul();
+  window.addEventListener('load', () => setTimeout(fitSeoul, 100));
 })();
 </script>
 </body>
